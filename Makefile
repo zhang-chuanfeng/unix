@@ -14,7 +14,7 @@ clean:
 	done  && \
 	find ./ -not -name "." -not -name "*.c" -not -name "Makefile" \
 		-not -name "Make.*" -not -type d -not -name "*.h" \
-		| grep -v .git | grep -v *.md \
+		| grep -v .git | grep -v *.md | grep -v .vs* \
 		| xargs rm -rf
 
 include $(ROOT)/Make.libapue.inc
