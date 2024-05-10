@@ -13,7 +13,7 @@ clean:
 		(cd $$i && echo "cleaning $$i" && $(MAKE) clean) || exit 1; \
 	done  && \
 	find ./ -not -name "." -not -name "*.c" -not -name "Makefile" \
-		-not -name "Make.*" -not -type d -not -name "*.h" -not -name "*.md" \
+		-not -name "Make.*" -not -type d -not -name "*.h" -not -name "*.md" -not -name "*.zig" \
 		| grep -v .git | grep -v *.md | grep -v .vs* \
 		| xargs rm -rf
 
