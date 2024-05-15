@@ -12,6 +12,8 @@ fn signal(sig: u6, handler_fun: std.os.linux.Sigaction.handler_fn) void {
     _ = sigAction(sig, &action, null);
 }
 
+// 可以参考std.ChildProcess
+
 pub fn main() !void {
     signal(std.os.linux.SIG.INT, signalHandler);
     std.debug.print("%% ", .{});
@@ -29,47 +31,26 @@ pub fn main() !void {
             std.os.linux.exit(-1);
         } else if (pid == 0) {
             // child
-            var args: [:null]?[*:0]const u8 = undefined;
-            const envp = [_:null]?[*:0]const u8{null};
-
-            const argv_tmp = try std.heap.page_allocator.alloc(?[*:0]const u8, 10);
-            defer std.heap.page_allocator.free(argv_tmp);
+            const envp = [_:null]?[*:0]const u8{ "PATH=/usr/bin:/bin".ptr, null };
+            // const envp = @as([*:null]const ?[*:0]const u8, @ptrCast(std.os.environ.ptr));
+            // const envp = std.c.environ;
 
             var tokenIter = std.mem.tokenize(u8, line, " \t\n\r");
-            var i: usize = 0;
-            while (tokenIter.next()) |token| : (i += 1) {
-                if (i >= 9) break;
-                std.debug.print("{s}\n", .{token});
-                var buff = try std.heap.page_allocator.alloc(u8, token.len + 1);
-                // defer std.heap.page_allocator.free(buff);
-                std.debug.print("token.len={d}, buff.len={d}\n", .{ token.len, buff.len });
-                buff[token.len] = 0;
-                std.debug.print("token.len={d}, buff.len={d}\n", .{ token.len, buff.len });
-                buff.len = token.len;
-                @memcpy(buff, token);
-                buff.len = token.len + 1;
-                argv_tmp[i] = buff[0..token.len :0];
-            }
-            // defer {
-            //     var j: usize = 0;
-            //     while (j < argv_tmp.len) : (j += 1) {
-            //         if (argv_tmp[j] != null) {
-            //             // 如何释放上面 buff的内存
-            //             // std.heap.page_allocator.free(argv_tmp[j].?.*);
-            //         }
-            //     }
-            // }
-            const argv = try std.heap.page_allocator.alloc(?[*:0]const u8, i + 1);
-            defer std.heap.page_allocator.free(argv);
-            argv[i] = null;
-            std.debug.print("i={d}\n", .{i});
-            std.debug.print("argv.len={d}\n", .{argv.len});
-            while (i > 0) : (i -= 1) {
-                argv[argv.len - 1 - i] = argv_tmp[argv.len - 1 - i];
-            }
 
-            args = argv[0 .. argv.len - 1 :null];
-            _ = std.os.linux.execve(argv[0].?, args.ptr, &envp);
+            // 使用ArrayList自动增长
+            var argvs = std.ArrayList([]const u8).init(allocator);
+            defer argvs.deinit();
+            while (tokenIter.next()) |token| {
+                try argvs.append(token);
+            }
+            // 这里参考 std.ChildProcess.spawnPosix()
+            // 使用allocSentinel 和  dupeZ
+            const argv_buf = try std.heap.page_allocator.allocSentinel(?[*:0]const u8, argvs.items.len, null);
+            defer std.heap.page_allocator.free(argv_buf);
+            for (argvs.items, 0..) |arg, i| argv_buf[i] = (try allocator.dupeZ(u8, arg)).ptr;
+
+            // 第一个参数需要使用绝对路径 std.ChildProcess使用的是searchPath
+            _ = std.os.linux.execve(argv_buf.ptr[0].?, argv_buf.ptr, &envp);
             std.debug.panic("couldn't execute: {s}", .{line});
             std.os.linux.exit(127);
         }
