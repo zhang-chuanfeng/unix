@@ -13,6 +13,7 @@ fn signal(sig: u6, handler_fun: std.os.linux.Sigaction.handler_fn) void {
 }
 
 // 可以参考std.ChildProcess
+// ziglang.cc https://github.com/orgs/zigcc/discussions/123
 
 pub fn main() !void {
     signal(std.os.linux.SIG.INT, signalHandler);
@@ -47,7 +48,11 @@ pub fn main() !void {
             // 使用allocSentinel 和  dupeZ
             const argv_buf = try std.heap.page_allocator.allocSentinel(?[*:0]const u8, argvs.items.len, null);
             defer std.heap.page_allocator.free(argv_buf);
-            for (argvs.items, 0..) |arg, i| argv_buf[i] = (try allocator.dupeZ(u8, arg)).ptr;
+            var arena_allocator = std.heap.ArenaAllocator.init(allocator);
+            defer arena_allocator.deinit();
+            const arena = arena_allocator.allocator();
+            // dupeZ alloc需要退出释放  使用arena
+            for (argvs.items, 0..) |arg, i| argv_buf[i] = (try arena.dupeZ(u8, arg)).ptr;
 
             // 第一个参数需要使用绝对路径 std.ChildProcess使用的是searchPath
             _ = std.os.linux.execve(argv_buf.ptr[0].?, argv_buf.ptr, &envp);
