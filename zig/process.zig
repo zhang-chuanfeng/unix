@@ -36,7 +36,7 @@ pub fn main() !void {
             // const envp = @as([*:null]const ?[*:0]const u8, @ptrCast(std.os.environ.ptr));
             // const envp = std.c.environ;
 
-            var tokenIter = std.mem.tokenize(u8, line, " \t\n\r");
+            var tokenIter = std.mem.tokenize(u8, line, std.ascii.whitespace[0..]);
 
             // 使用ArrayList自动增长
             var argvs = std.ArrayList([]const u8).init(allocator);
