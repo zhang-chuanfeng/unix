@@ -19,13 +19,21 @@ pub fn main() !void {
     signal(std.os.linux.SIG.INT, signalHandler);
     std.debug.print("%% ", .{});
 
-    const allocator = std.heap.page_allocator;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const deinit_status = gpa.deinit();
+        if (deinit_status == .leak) @panic("memory leak");
+    }
+    const gpa_allocator = gpa.allocator();
     const stdin = std.io.getStdIn().reader();
 
     var pid: usize = undefined;
     var status: u32 = undefined;
     while (true) {
-        const line = try stdin.readUntilDelimiterAlloc(allocator, '\n', 1024);
+        var arena = std.heap.ArenaAllocator.init(gpa_allocator);
+        defer arena.deinit();
+        const arena_allocator = arena.allocator();
+        const line = try stdin.readUntilDelimiterAlloc(arena_allocator, '\n', 1024);
         pid = std.os.linux.fork();
         if (pid < 0) {
             std.debug.print("fork error", .{});
@@ -39,20 +47,16 @@ pub fn main() !void {
             var tokenIter = std.mem.tokenize(u8, line, std.ascii.whitespace[0..]);
 
             // 使用ArrayList自动增长
-            var argvs = std.ArrayList([]const u8).init(allocator);
-            defer argvs.deinit();
+            var argvs = std.ArrayList([]const u8).init(arena_allocator);
             while (tokenIter.next()) |token| {
                 try argvs.append(token);
             }
             // 这里参考 std.ChildProcess.spawnPosix()
             // 使用allocSentinel 和  dupeZ
-            const argv_buf = try std.heap.page_allocator.allocSentinel(?[*:0]const u8, argvs.items.len, null);
-            defer std.heap.page_allocator.free(argv_buf);
-            var arena_allocator = std.heap.ArenaAllocator.init(allocator);
-            defer arena_allocator.deinit();
-            const arena = arena_allocator.allocator();
+
+            const argv_buf = try arena_allocator.allocSentinel(?[*:0]const u8, argvs.items.len, null);
             // dupeZ alloc需要退出释放  使用arena
-            for (argvs.items, 0..) |arg, i| argv_buf[i] = (try arena.dupeZ(u8, arg)).ptr;
+            for (argvs.items, 0..) |arg, i| argv_buf[i] = (try arena_allocator.dupeZ(u8, arg)).ptr;
 
             // 第一个参数需要使用绝对路径 std.ChildProcess使用的是searchPath
             _ = std.os.linux.execve(argv_buf.ptr[0].?, argv_buf.ptr, &envp);
